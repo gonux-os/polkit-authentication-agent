@@ -1,0 +1,19 @@
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - task -l
+    silent: true
+  build:
+    desc: Build the software
+    cmds:
+      - go build -o out/polkit-authentication-agent .
+      - sudo chown root out/polkit-authentication-agent
+      - sudo chmod u+s out/polkit-authentication-agent
+  run:
+    deps:
+      - build
+    desc: Build and run the software
+    cmds:
+      - out/polkit-authentication-agent
