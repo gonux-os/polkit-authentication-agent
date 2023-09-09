@@ -1,19 +1,45 @@
 version: '3'
 
 tasks:
+
   default:
     cmds:
       - task -l
     silent: true
+
   build:
     desc: Build the software
     cmds:
       - go build -o out/polkit-authentication-agent .
+      # binary needs to be owned by root
       - sudo chown root out/polkit-authentication-agent
+      # and have setuid set so that a regular user can execute it with root permissions
       - sudo chmod u+s out/polkit-authentication-agent
+
   run:
+    desc: Build and run the software
     deps:
       - build
-    desc: Build and run the software
     cmds:
       - out/polkit-authentication-agent
+
+  nix-build:
+    desc: Build the software using nix
+    cmds:
+      - nix build
+      # binary needs to be owned by root
+      - sudo chown root result/bin/polkit-authentication-agent
+      # and have setuid set so that a regular user can execute it with root permissions
+      - sudo chmod u+s result/bin/polkit-authentication-agent
+
+  nix-run:
+    desc: Build and run the software using nix
+    deps:
+      - nix-build
+    cmds:
+      - result/bin/polkit-authentication-agent
+
+  nix-dev:
+    desc: Launch a nix shell where regular runs and builds can be executed
+    cmds:
+      - nix-shell

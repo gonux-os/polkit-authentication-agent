@@ -2,11 +2,18 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"os"
-	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/godbus/dbus/v5"
+
+	"gioui.org/app"
+	"gioui.org/io/system"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/text"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
 )
 
 type Agent struct {
@@ -23,6 +30,29 @@ type PKSubject struct {
 type PKIdentity struct {
 	Kind    string                  `dbus:"identity_kind"`
 	Details map[string]dbus.Variant `dbus:"identity_details"`
+}
+
+type AuthenticationRequest struct {
+	agent      *Agent
+	cookie     string
+	ActionId   string
+	Message    string
+	IconName   string
+	Details    map[string]string
+	Identities []PKIdentity
+	wasDenied  bool
+}
+
+func (req *AuthenticationRequest) Accept(identity PKIdentity) error {
+	err := req.agent.call("AuthenticationAgentResponse", req.cookie, identity) // Confirm
+	if err != nil {
+		return fmt.Errorf("sending response: %w", err)
+	}
+	return nil
+}
+
+func (req *AuthenticationRequest) Deny() {
+	req.wasDenied = true
 }
 
 func NewAgent() (*Agent, error) {
@@ -66,23 +96,110 @@ func (a *Agent) call(method string, args ...interface{}) error {
 	return nil
 }
 
+func run(req *AuthenticationRequest, w *app.Window, message string) error {
+	th := material.NewTheme()
+	var ops op.Ops
+	var acceptButton widget.Clickable
+	var denyButton widget.Clickable
+	var passwordInput widget.Editor
+
+	go func() {
+		for {
+			if acceptButton.Clicked() {
+				err := req.Accept(req.Identities[0])
+				if err != nil {
+					panic(err)
+				}
+				w.Perform(system.ActionClose)
+			}
+			if denyButton.Clicked() {
+				req.Deny()
+				w.Perform(system.ActionClose)
+			}
+		}
+	}()
+
+	for e := range w.Events() {
+		switch e := e.(type) {
+		case system.DestroyEvent:
+			return e.Err
+		case system.FrameEvent:
+			gtx := layout.NewContext(&ops, e)
+
+			layout.Flex{
+				// Vertical alignment, from top to bottom
+				Axis: layout.Vertical,
+				// Empty space is left at the start, i.e. at the top
+				Spacing: layout.SpaceAround,
+			}.Layout(gtx,
+				layout.Rigid(
+					func(gtx layout.Context) layout.Dimensions {
+						title := material.Body1(th, message)
+						black := color.NRGBA{R: 0, G: 0, B: 0, A: 255}
+						title.Color = black
+						title.Alignment = text.Middle
+						return title.Layout(gtx)
+					},
+				),
+				layout.Rigid(
+					func(gtx layout.Context) layout.Dimensions {
+						ed := material.Editor(th, &passwordInput, "Password")
+						return ed.Layout(gtx)
+					},
+				),
+				layout.Rigid(
+					func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{
+							// Vertical alignment, from top to bottom
+							Axis: layout.Horizontal,
+							// Empty space is left at the start, i.e. at the top
+							Spacing: layout.SpaceBetween,
+						}.Layout(gtx,
+							layout.Rigid(
+								func(gtx layout.Context) layout.Dimensions {
+									btn := material.Button(th, &acceptButton, "Accept")
+									return btn.Layout(gtx)
+								},
+							),
+							layout.Rigid(
+								func(gtx layout.Context) layout.Dimensions {
+									btn := material.Button(th, &denyButton, "Deny")
+									return btn.Layout(gtx)
+								},
+							),
+						)
+					},
+				),
+			)
+
+			e.Frame(gtx.Ops)
+		}
+	}
+	return nil
+}
+
 func (a *Agent) BeginAuthentication(action_id string, message string, icon_name string, details map[string]string, cookie string, identities []PKIdentity) *dbus.Error {
 	fmt.Printf("Auth request > id: %v ; message: %v ; icon_name: %v ; details: %v ; cookie: %v ; identities: %v\n", action_id, message, icon_name, details, cookie, identities)
 
-	var style = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#FAFAFA")).
-		Background(lipgloss.Color("#7D56F4")).
-		PaddingTop(1).
-		PaddingBottom(1).
-		PaddingLeft(2).
-		PaddingRight(2)
+	fmt.Println(message)
 
-	fmt.Println(style.Render(message))
-	// TODO: Show GUI
-	err := a.call("AuthenticationAgentResponse", cookie, identities[0]) // Confirm
+	w := app.NewWindow()
+	req := &AuthenticationRequest{
+		agent:      a,
+		ActionId:   action_id,
+		Message:    message,
+		IconName:   icon_name,
+		Details:    details,
+		cookie:     cookie,
+		Identities: identities,
+	}
+	err := run(req, w, message)
 	if err != nil {
-		panic(fmt.Errorf("sending response: %w", err))
+		panic(fmt.Errorf("executing GUI: %w", err))
+	}
+
+	if req.wasDenied {
+		return dbus.NewError("org.freedesktop.PolicyKit1.Error.Cancelled", nil)
 	}
 	return nil
 }
@@ -114,7 +231,5 @@ func main() {
 
 	fmt.Println("Running")
 
-	for {
-		time.Sleep(1 * time.Nanosecond)
-	}
+	app.Main()
 }
