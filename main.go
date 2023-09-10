@@ -8,10 +8,12 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"gioui.org/app"
+	"gioui.org/io/key"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/text"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
@@ -96,7 +98,11 @@ func (a *Agent) call(method string, args ...interface{}) error {
 	return nil
 }
 
-func run(req *AuthenticationRequest, w *app.Window, message string) error {
+func ShowGui(req *AuthenticationRequest) error {
+	w := app.NewWindow(
+		app.Title("Authorization Required"),
+		app.Size(unit.Dp(400), unit.Dp(200)),
+	)
 	th := material.NewTheme()
 	var ops op.Ops
 	var acceptButton widget.Clickable
@@ -127,16 +133,13 @@ func run(req *AuthenticationRequest, w *app.Window, message string) error {
 			gtx := layout.NewContext(&ops, e)
 
 			layout.Flex{
-				// Vertical alignment, from top to bottom
-				Axis: layout.Vertical,
-				// Empty space is left at the start, i.e. at the top
+				Axis:    layout.Vertical,
 				Spacing: layout.SpaceAround,
 			}.Layout(gtx,
 				layout.Rigid(
 					func(gtx layout.Context) layout.Dimensions {
-						title := material.Body1(th, message)
-						black := color.NRGBA{R: 0, G: 0, B: 0, A: 255}
-						title.Color = black
+						title := material.Body1(th, req.Message)
+						title.Color = color.NRGBA{R: 0, G: 0, B: 0, A: 255}
 						title.Alignment = text.Middle
 						return title.Layout(gtx)
 					},
@@ -144,26 +147,26 @@ func run(req *AuthenticationRequest, w *app.Window, message string) error {
 				layout.Rigid(
 					func(gtx layout.Context) layout.Dimensions {
 						ed := material.Editor(th, &passwordInput, "Password")
+						ed.Editor.InputHint = key.HintPassword
+						ed.Editor.Mask = '•'
 						return ed.Layout(gtx)
 					},
 				),
 				layout.Rigid(
 					func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{
-							// Vertical alignment, from top to bottom
-							Axis: layout.Horizontal,
-							// Empty space is left at the start, i.e. at the top
-							Spacing: layout.SpaceBetween,
+							Axis:    layout.Horizontal,
+							Spacing: layout.SpaceAround,
 						}.Layout(gtx,
 							layout.Rigid(
 								func(gtx layout.Context) layout.Dimensions {
-									btn := material.Button(th, &acceptButton, "Accept")
+									btn := material.Button(th, &denyButton, "Deny")
 									return btn.Layout(gtx)
 								},
 							),
 							layout.Rigid(
 								func(gtx layout.Context) layout.Dimensions {
-									btn := material.Button(th, &denyButton, "Deny")
+									btn := material.Button(th, &acceptButton, "Accept")
 									return btn.Layout(gtx)
 								},
 							),
@@ -183,7 +186,6 @@ func (a *Agent) BeginAuthentication(action_id string, message string, icon_name 
 
 	fmt.Println(message)
 
-	w := app.NewWindow()
 	req := &AuthenticationRequest{
 		agent:      a,
 		ActionId:   action_id,
@@ -193,7 +195,7 @@ func (a *Agent) BeginAuthentication(action_id string, message string, icon_name 
 		cookie:     cookie,
 		Identities: identities,
 	}
-	err := run(req, w, message)
+	err := ShowGui(req)
 	if err != nil {
 		panic(fmt.Errorf("executing GUI: %w", err))
 	}
