@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"syscall"
 
 	"github.com/godbus/dbus/v5"
@@ -35,6 +36,28 @@ type AuthenticationRequest struct {
 	Identities       []PKIdentity
 	wasAccepted      bool
 	acceptedIdentity PKIdentity
+}
+
+type User struct {
+	Uid      uint32
+	Username string
+	Name     string
+}
+
+func (identity *PKIdentity) User() User {
+	if identity.Kind != "unix-user" {
+		panic("identity kind is not 'unix-user'")
+	}
+	uid := identity.Details["uid"].Value().(uint32)
+	u, err := user.LookupId(fmt.Sprintf("%d", uid))
+	if err != nil {
+		panic(err)
+	}
+	return User{
+		Uid:      uid,
+		Username: u.Username,
+		Name:     u.Name,
+	}
 }
 
 func NewAgent() (*Agent, error) {

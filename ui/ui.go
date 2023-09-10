@@ -42,17 +42,39 @@ func Show(req *agent.AuthenticationRequest) error {
 	closeWindow := make(chan bool)
 	defer close(closeWindow)
 
-	passwordInput := widget.NewEntry()
+	passwordInput := widget.NewPasswordEntry()
 	passwordInput.SetPlaceHolder("Password")
-	passwordInput.Password = true
 	if config.Global.Mode != config.RequestPassword {
 		passwordInput.Hide()
+	}
+
+	var selectedIdentity agent.PKIdentity
+
+	var userNames []string
+	for _, identity := range req.Identities {
+		switch config.Global.UserSelectorField {
+		case config.Username:
+			userNames = append(userNames, identity.User().Username)
+		case config.Name:
+			userNames = append(userNames, identity.User().Name)
+		}
+	}
+
+	userSelect := widget.NewSelect(userNames, func(s string) {})
+	selectedIdentity = req.Identities[0]
+	userSelect.SetSelectedIndex(0)
+	userSelect.OnChanged = func(s string) {
+		selectedIdentity = req.Identities[userSelect.SelectedIndex()]
+	}
+	if !config.Global.ShowUserSelector {
+		userSelect.Hide()
 	}
 
 	w.SetContent(
 		container.New(
 			layout.NewVBoxLayout(),
 			widget.NewLabel(req.Message),
+			userSelect,
 			passwordInput,
 			container.New(
 				layout.NewHBoxLayout(),
@@ -61,7 +83,7 @@ func Show(req *agent.AuthenticationRequest) error {
 					closeWindow <- true
 				}),
 				widget.NewButton("Accept", func() {
-					req.Accept(req.Identities[0])
+					req.Accept(selectedIdentity)
 					closeWindow <- true
 				}),
 			),
